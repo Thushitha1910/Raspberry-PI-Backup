@@ -1,0 +1,21 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Model files (these are too large for Git)
+*.pt
+*.pth
+*.pkl
+*.save
+
+# Captured images
+captured_image.jpg
+captured_item.jpg
+image_*.jpg
+
+# Cropped images
+cropped_output/
+
+# Virtual environment
+venv/
+*.env
