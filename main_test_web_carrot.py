@@ -442,13 +442,13 @@ def capture_image(filename="captured_image.jpg"):
 def read_sensors(sample_id="carrot1"):
     try:
         # MQ4
-        mq4_v = mq4_chan.voltage
+        mq4_v = mq4_chan.voltage-0.010
         rs = (5 - mq4_v) * 1000 / mq4_v
         ratio = rs / 10000
         ppm_mq4 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
 
         # MQ135
-        mq135_v = mq135_chan.voltage-0.044
+        mq135_v = mq135_chan.voltage-0.078
         rs = (5 - mq135_v) * 1000 / mq135_v
         ratio = rs / 10000
         ppm_mq135 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
@@ -465,7 +465,7 @@ def read_sensors(sample_id="carrot1"):
         time.sleep(0.5)
         while not as7263.data_ready:
             time.sleep(0.05)
-        violet = as7263.violet
+        violet = as7263.violet+15.35116577148437
         as7263.driver_led = False
 
         return [ppm_mq4, ppm_mq135, ppm_tgs2602, violet]

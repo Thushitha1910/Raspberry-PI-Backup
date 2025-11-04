@@ -7,7 +7,6 @@ from Adafruit_IO import Client
 import adafruit_as726x
 
 
-
 # === Initialize Adafruit IO Client ===
 aio = Client(ADAFRUIT_IO_USERNAME, ADAFRUIT_IO_KEY)
 

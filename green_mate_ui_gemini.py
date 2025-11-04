@@ -14,6 +14,7 @@ import joblib
 import numpy as np
 import RPi.GPIO as GPIO
 from PIL import Image, ImageTk
+import google.generativeai as genai
 import math
 import subprocess
 import cv2
@@ -35,6 +36,23 @@ FLASHER_PIN = 16  # This is GPIO16 (BCM naming)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(FLASHER_PIN, GPIO.OUT)
 GPIO.output(FLASHER_PIN, GPIO.LOW) # Ensure it's off to start
+
+# === NEW: Configure Gemini API ===
+try:
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+    if not GEMINI_API_KEY:
+        print("⚠️ GEMINI_API_KEY environment variable not set. Suggestions will be disabled.")
+        gemini_model = None
+    else:
+        genai.configure(api_key=GEMINI_API_KEY)
+        gemini_model = genai.GenerativeModel("models/gemini-2.5-flash")
+        print("✅ Gemini API configured successfully using gemini-2.5-flash.")
+
+except Exception as e:
+    print(f"❌ Error configuring Gemini: {e}")
+    gemini_model = None
+
 # === Import Custom Analysis Modules ===
 # (Make sure these files are in the same directory or Python path)
 try:
@@ -70,53 +88,20 @@ GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 PRODUCE_INFO = {
     "banana": {
         "name": "Banana",
-        "nutrients": "Vitamin B6, Vitamin C, Fiber, Potassium",
-        # "suggestions": {
-        #     "Ripe": "Best for direct eating or smoothies.\nAvoid refrigeration for natural ripening.",
-        #     "Underripe": "Store at room temperature. Will be ripe in a few days. Good for cooking.",
-        #     "Unripe": "Store at room temperature. Will be ripe in a few days. Good for cooking.",
-        #     "Overripe": "Ideal for baking (banana bread) or freezing for later use in smoothies.",
-        #     "Rotten": "Discard. Not suitable for consumption.",
-        #}
     },
     "carrot": {
         "name": "Carrot",
-        "nutrients": "Vitamin A (Beta-Carotene), Vitamin K1, Potassium, Fiber",
-        # "suggestions": {
-        #     "Fresh": "Excellent for eating raw, in salads, or for juicing. Store in the fridge.",
-        #     "Not_Fresh": "Best used for cooking (soups, stews, roasting) rather than eating raw.",
-        #     "Rotten": "Discard. Do not consume.",
-        # }
     },
     "mango": {
         "name": "Mango",
-        "nutrients": "Vitamin C, Vitamin A (Beta-Carotene), Folate (B9), Fiber",
-        # "suggestions": {
-        #     "Fresh": "Ideal for eating raw, in smoothies, salads, or fruit desserts. Store at room temp until ripe, then refrigerate.",
-        #     "Not_Fresh": "Good for cooking (chutneys, sauces, preserves) or smoothies if not too far gone.",
-        #     "Rotten": "Discard. Do not consume.",
-        # }
     },
     "strawberry": {
         "name": "Strawberry",
-        "nutrients": "Vitamin C, Manganese, Folate (B9), Potassium, Fiber",
-        # "suggestions": {
-        #     "Fresh": "Perfect for eating raw, in salads, smoothies, or as toppings for desserts and cereals. Store unwashed in the fridge.",
-        #     "Not_Fresh": "Best used for smoothies, baking (muffins, pies), or cooking down into jams or sauces.",
-        #     "Rotten": "Discard. Mold spreads very fast on strawberries, do not consume any part of a moldy berry.",
-        # }
     },
     "apple": {
         "name": "Apple",
-        "nutrients": "Fiber (Pectin), Vitamin C, Potassium, Antioxidants (Quercetin)",
-    # "suggestions": {
-    #     "Fresh": "Excellent for eating raw, slicing into salads, or serving with peanut butter. Store in the fridge's crisper drawer.",
-    #     "Not_Fresh": "Ideal for cooking. Best used for applesauce, apple butter, baking (pies, crisps, muffins), or chopping into stews.",
-    #     "Rotten": "Discard. Do not eat. Can be composted, but check for mold, as some (like patulin) can be harmful.",
-    # }
-},
+    },
 }
-
 
 # ==============================
 # === Core Logic Functions ===
@@ -146,29 +131,75 @@ def capture_vit_image(filename="captured_item.jpg"):
     except subprocess.CalledProcessError as e:
         print(f"❌ Error capturing ViT image: {e}")
         return None
-        
+
+def get_gemini_nutrients(item_name,ripeness_level):
+    """
+    Gets a dynamic nutrient list from the Gemini API.
+    """
+    if not GEMINI_API_KEY:
+        # Fallback if API key is not set
+        return "Nutrient data not available."
+
+    prompt = (
+        f"List the main nutrients (e.g., vitamins, minerals) for a '{ripeness_level}' '{item_name}'. "
+        f"Be concise, like a comma-separated list. "
+        f"Example: Vitamin C, Potassium, Fiber"
+    )
+    
+    try:
+        # Set a 10-second timeout for the network request
+        response = gemini_model.generate_content(
+            prompt,
+            request_options={'timeout': 30}
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"❌ Gemini API Error: {e}")
+        return "Nutrient data not available."
+
+
+def fetch_and_update_nutrients(item_name,ripeness_level):
+    """
+    Runs the Gemini query in a thread and updates the UI when complete.
+    """
+    # Get the dynamic nutrients
+    nutrients = get_gemini_nutrients(item_name,ripeness_level)
+    
+    # Update the UI label (must be thread-safe)
+    try:
+        # This is safe because Tkinter updates are atomic
+        nutrient_text.config(text=nutrients)
+    except tk.TclError:
+        pass # Window was closed before the thread finished
         
 def update_ui(result):
     """
-    Updates all UI elements based on the final result dictionary
-    from an analysis script (e.g., run_banana_analysis).
+    Updates all UI elements based on the final result dictionary.
+    (CORRECTED VERSION)
     """
-    if not result:
-        ripeness_label.config(text="Ripeness Level: Analysis Failed")
-        return
+    # === Initialize variables to safe defaults ===
+    item_name = "Unknown"
+    pred_name = "Unknown"
+    info = PRODUCE_INFO.get("banana") # Default to banana info
 
     try:
+        if not result:
+            ripeness_label.config(text="Ripeness Level: Analysis Failed")
+            return
+
+        # === 1. Get data from result dictionary ===
         item_name = result.get("item", "Unknown").lower()
         pred_name = result.get("ripeness", "Unknown")
         sensor_values = result.get("sensor_values", [0, 0, 0, 0])
-        img_path = result.get("image_path") # This is why the banana script fix is CRITICAL
-        
-        # === NEW: Get shelf life data ===
+        img_path = result.get("image_path")
         days_to_rotten = result.get("days_to_rotten")
         rotten_date_str = result.get("estimated_rotten_date")
-        # === END NEW ===
 
-        # --- Update Image ---
+        # === 2. Get the produce info (THIS IS THE FIX) ===
+        #    Assign 'info' *after* 'item_name' is known, and *before* 'info' is used.
+        info = PRODUCE_INFO.get(item_name, PRODUCE_INFO.get("banana")) 
+        
+        # === 3. Update Image ===
         if img_path and os.path.exists(img_path):
             img = Image.open(img_path)
             img_w, img_h = img.size
@@ -190,35 +221,44 @@ def update_ui(result):
             image_canvas.create_window(135, 68, window=image_label, anchor="center", tags="image_window")
         else:
             print(f"⚠️ Could not load image from path: {img_path}")
-            
+        
+        # === 4. Update all text labels ===
+        produce_name_label.config(text=info["name"])
+        
+        sensor_labels["MQ 4 Sensor"].config(text=f"{sensor_values[0]:.2f} ppm")
+        sensor_labels["MQ 135 Sensor"].config(text=f"{sensor_values[1]:.2f} ppm")
+        sensor_labels["TGS2602 Sensor"].config(text=f"{sensor_values[2]:.2f} ppm")
+        sensor_labels["NIR Spectrometer"].config(text=f"{sensor_values[3]:.2f}")
+        
+        ripeness_label.config(text=f"Ripeness Level: {pred_name}")
+        draw_gauge(gauge_canvas, pred_name) # Update the gauge
+
+        # === 5. Update Shelf Life ===
+        if pred_name in ("Rotten", "Overripe"):
+            shelf_life_text.config(text="Item is past its prime.")
+        elif days_to_rotten is not None and rotten_date_str is not None:
+            shelf_life_text.config(text=f"Approx. {days_to_rotten} days remaining.\n(Est. rotten date: {rotten_date_str})")
+        else:
+            shelf_life_text.config(text="...")
+
+        # === 6. Update Nutrients (dynamically) ===
+        nutrient_text.config(text="Getting nutrients...")
+        threading.Thread(
+            target=fetch_and_update_nutrients, 
+            args=(info["name"],pred_name), # Now 'info' is guaranteed to exist
+            daemon=True
+        ).start()
+
     except Exception as e:
-        print(f"UI Image update error: {e}")
-
-    # --- Update Text Labels ---
-    info = PRODUCE_INFO.get(item_name, PRODUCE_INFO.get("banana")) # Default to banana if not found
-    
-    produce_name_label.config(text=info["name"]) # Update the item name
-    
-    sensor_labels["MQ 4 Sensor"].config(text=f"{sensor_values[0]:.2f} ppm")
-    sensor_labels["MQ 135 Sensor"].config(text=f"{sensor_values[1]:.2f} ppm")
-    sensor_labels["TGS2602 Sensor"].config(text=f"{sensor_values[2]:.2f} ppm")
-    sensor_labels["NIR Spectrometer"].config(text=f"{sensor_values[3]:.2f}")
-    
-    ripeness_label.config(text=f"Ripeness Level: {pred_name}")
-    draw_gauge(gauge_canvas, pred_name) # Update the gauge
-
-    nutrient_text.config(text=info["nutrients"])
-    # suggestion = info["suggestions"].get(pred_name, "Please scan again.")
-    # suggestion_text.config(text=suggestion)
-    
-    # === NEW: Update Shelf Life Text ===
-    if pred_name in ("Rotten", "Overripe"):
-        shelf_life_text.config(text="Item is past its prime.")
-    elif days_to_rotten is not None and rotten_date_str is not None:
-        shelf_life_text.config(text=f"Approx. {days_to_rotten} days remaining.\n(Est. rotten date: {rotten_date_str})")
-    else:
-        shelf_life_text.config(text="...")
-    # === END NEW ===
+        # If ANY error happens, print it and show a user-friendly message
+        print(f"❌ Error in update_ui: {e}")
+        try:
+            ripeness_label.config(text="Ripeness Level: Error")
+            produce_name_label.config(text="Error")
+            nutrient_text.config(text="...")
+            shelf_life_text.config(text="...")
+        except Exception:
+            pass # UI might already be closed
 
 
 def run_full_analysis_pipeline():
@@ -475,6 +515,7 @@ shelf_life_label.pack(side="top", anchor="w", padx=20, pady=(10,0)) # Reduced to
 shelf_life_text = tk.Label(inner_panel, text="...", font=("Poppins", 11, "normal"), bg="#ffffff", justify="left", wraplength=360, anchor="w")
 shelf_life_text.pack(side="top", anchor="w", padx=20, pady=2, fill="x")
 # === END NEW ===
+
 
 try:
     icon_path = "/home/device/ML_model/scan_icon.png"

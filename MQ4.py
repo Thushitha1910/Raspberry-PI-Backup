@@ -16,7 +16,7 @@ chan = AnalogIn(ads, 0)
 print("Reading MQ4 sensor values...")
 
 while True:
-    voltage = chan.voltage
+    voltage = chan.voltage#-0.010
     print(f"MQ4 Voltage: {voltage:.3f} V")
     time.sleep(2)
 

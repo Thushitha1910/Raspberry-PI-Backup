@@ -26,7 +26,7 @@ while True:
         yellow = as7263.yellow
         green = as7263.green
         blue = as7263.blue
-        violet = as7263.violet
+        violet = as7263.violet+30.35116577148437
 
         # Turn off LED
         as7263.driver_led = False

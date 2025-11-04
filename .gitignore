@@ -19,3 +19,4 @@ cropped_output/
 # Virtual environment
 venv/
 *.env
+
