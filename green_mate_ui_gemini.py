@@ -62,6 +62,8 @@ try:
     from main_test_web_mango import run_analysis as run_mango_analysis
     from main_test_web_strawberry import run_analysis as run_strawberry_analysis
     from main_test_web_apple import run_analysis as run_apple_analysis
+    from main_test_web_tomato import run_analysis as run_tomato_analysis
+    from main_test_web_bellpepper import run_analysis as run_bellpepper_analysis
     # ... import other analysis scripts here ...
 except ImportError as e:
     print(f"❌ Critical Error: Could not import analysis modules.")
@@ -88,18 +90,31 @@ GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 PRODUCE_INFO = {
     "banana": {
         "name": "Banana",
+        "type": "fruit"
     },
     "carrot": {
         "name": "Carrot",
+        "type": "vegetable"
     },
     "mango": {
         "name": "Mango",
+        "type": "fruit"
     },
     "strawberry": {
         "name": "Strawberry",
+        "type": "fruit"
     },
     "apple": {
         "name": "Apple",
+        "type": "fruit"
+    },
+    "tomato": {
+        "name": "Tomato",
+        "type": "vegetable"  # Botanically a fruit, and "ripeness" applies
+    },
+    "bellpepper": {
+        "name": "Bellpepper",
+        "type": "vegetable"  # Botanically a fruit, and "ripeness" applies
     },
 }
 
@@ -230,7 +245,22 @@ def update_ui(result):
         sensor_labels["TGS2602 Sensor"].config(text=f"{sensor_values[2]:.2f} ppm")
         sensor_labels["NIR Spectrometer"].config(text=f"{sensor_values[3]:.2f}")
         
-        ripeness_label.config(text=f"Ripeness Level: {pred_name}")
+        # === NEW: Dynamically set label based on produce type ===
+        produce_type = info.get("type", "fruit") # Default to 'fruit' if not specified
+        
+        if produce_type == "vegetable":
+            label_text = "Freshness Level:"
+            ripeness_label.place(x=10, y=335)
+            ripeness_label.config(
+                text=f"{label_text} {pred_name}", 
+                font=("Poppins", 13, "bold")  # <-- SET NEW FONT
+            )
+        else:
+            label_text = "Ripeness Level:"
+            
+        ripeness_label.config(text=f"{label_text} {pred_name}")
+        # === END NEW ===
+        
         draw_gauge(gauge_canvas, pred_name) # Update the gauge
 
         # === 5. Update Shelf Life ===
@@ -267,6 +297,8 @@ def run_full_analysis_pipeline():
     """
     # --- 1. Clear UI for new scan ---
     ripeness_label.config(text="        Identifying..")
+    ripeness_label.place(x=75, y=335)
+    ripeness_label.config(font=("Poppins", 14, "bold"))
     produce_name_label.config(text="...")
     nutrient_text.config(text="...")
     #suggestion_text.config(text="...")
@@ -321,6 +353,10 @@ def run_full_analysis_pipeline():
             analysis_result = run_strawberry_analysis()
         elif item_name == "apple":
             analysis_result = run_apple_analysis()
+        elif item_name == "tomato":
+            analysis_result = run_tomato_analysis()
+        elif item_name == "bellpepper":
+            analysis_result = run_bellpepper_analysis()
         else:
             print(f"⚠️ No analysis script found for: {item_name}")
             ripeness_label.config(text=f"No model for {item_name}")

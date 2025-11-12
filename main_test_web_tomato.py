@@ -84,26 +84,26 @@ class EarlyFusionModel(nn.Module):
 # === Load models & preprocessors ===
 def load_model():
     cnn_extractor = EfficientFeatureExtractor(pretrained=False).to(DEVICE)
-    cnn_extractor.base.load_state_dict(torch.load("Early_Fusion_Mango/best_mango_model.pth", map_location=DEVICE), strict=False)
+    cnn_extractor.base.load_state_dict(torch.load("Early_Fusion_Tomato/best_tomato_model.pth", map_location=DEVICE), strict=False)
     cnn_extractor.eval()
     sensor_feat = SensorNetFeat().to(DEVICE)
-    sensor_feat.load_state_dict(torch.load("Early_Fusion_Mango/mango_900_sensor_model.pth", map_location=DEVICE), strict=False)
+    sensor_feat.load_state_dict(torch.load("Early_Fusion_Tomato/tomato_900_sensor_model.pth", map_location=DEVICE), strict=False)
     sensor_feat.eval()
     img_dim = cnn_extractor(torch.randn(1, 3, 224, 224)).shape[1]
     sensor_dim = sensor_feat(torch.randn(1, 4)).shape[1]
     fusion_model = EarlyFusionModel(cnn_extractor, sensor_feat, img_dim, sensor_dim, NUM_CLASSES).to(DEVICE)
-    fusion_model.load_state_dict(torch.load("Early_Fusion_Mango/mango_early_fusion_model_October.pth", map_location=DEVICE))
+    fusion_model.load_state_dict(torch.load("Early_Fusion_Tomato/tomato_early_fusion_model_November.pth", map_location=DEVICE))
     fusion_model.eval()
     return fusion_model
 
 def load_scaler():
-    return joblib.load('Early_Fusion_Mango/mango_sensor_scaler.save')
+    return joblib.load('Early_Fusion_Tomato/tomato_sensor_scaler.save')
 
 def load_label_encoder():
-    return joblib.load('Early_Fusion_Mango/mango_label_encoder.save')
+    return joblib.load('Early_Fusion_Tomato/tomato_label_encoder.save')
 
 def load_regression_model():
-    return joblib.load("Early_Fusion_Mango/mango_regression_model.pkl")
+    return joblib.load("Early_Fusion_Tomato/tomato_regression_model.pkl")
 
 fusion_model = load_model()
 scaler = load_scaler()
@@ -134,7 +134,7 @@ def capture_image(filename="captured_image.jpg"):
         return None
 
 # === Read Sensors ===
-def read_sensors(sample_id="mango1"):
+def read_sensors(sample_id="tomato1"):
     try:
         # MQ4
         mq4_v = mq4_chan.voltage-0.010
@@ -206,14 +206,14 @@ def run_analysis():
     cv2.imwrite(crop_path, cropped)
     cropped_image = Image.open(crop_path)
 
-    sensor_values = read_sensors("mango1")
+    sensor_values = read_sensors("strawberry1")
     pred_idx = predict_ripeness(cropped_image, sensor_values)
     pred_name = label_encoder.classes_[pred_idx]
     days_to_rotten = predict_days_to_rotten(sensor_values, pred_name)
     rotten_date_str = (datetime.today() + timedelta(days=days_to_rotten)).strftime("%Y-%m-%d")
 
     return {
-        "item":"mango",
+        "item":"tomato",
         "ripeness": pred_name,
         "days_to_rotten": days_to_rotten,
         "estimated_rotten_date": rotten_date_str,
@@ -226,7 +226,7 @@ if __name__=="__main__":
     result = run_analysis()
     if result:
         print(f"📸 Image: {result['image_path']}")
-        print(f"🥭 Item: {result['item']}")
+        print(f"🍓 Item: {result['item']}")
         print(f"🍌 Predicted Ripeness: {result['ripeness']}")
         print(f"🕒 Days to Rotten: {result['days_to_rotten']}")
         print(f"📅 Estimated Rotten Date: {result['estimated_rotten_date']}")

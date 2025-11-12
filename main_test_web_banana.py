@@ -454,7 +454,7 @@ def read_sensors(sample_id="banana1"):
         print(f"[{sample_id}] MQ4: {round(ppm_mq4, 2)} ppm")
 
         # MQ135
-        mq135_v = mq135_chan.voltage-0.078
+        mq135_v = mq135_chan.voltage-0.058
         rs = (5 - mq135_v) * 1000 / mq135_v
         ratio = rs / 10000
         ppm_mq135 = 10 ** (-0.38 * math.log10(ratio) + 1.58)

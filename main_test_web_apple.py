@@ -137,7 +137,7 @@ def capture_image(filename="captured_image.jpg"):
 def read_sensors(sample_id="apple1"):
     try:
         # MQ4
-        mq4_v = mq4_chan.voltage# -0.010
+        mq4_v = mq4_chan.voltage-0.010
         rs = (5 - mq4_v) * 1000 / mq4_v
         ratio = rs / 10000
         ppm_mq4 = 10 ** (-0.38 * math.log10(ratio) + 1.58)

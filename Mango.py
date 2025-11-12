@@ -5,6 +5,10 @@ from adafruit_ads1x15.ads1015 import ADS1015
 from adafruit_ads1x15.analog_in import AnalogIn
 from Adafruit_IO import Client
 import adafruit_as726x
+import os
+
+ADAFRUIT_IO_USERNAME = os.environ.get("ADAFRUIT_IO_USERNAME_Mango")
+ADAFRUIT_IO_KEY = os.environ.get("ADAFRUIT_IO_KEY_Mango")
 
 
 # === Initialize Adafruit IO Client ===

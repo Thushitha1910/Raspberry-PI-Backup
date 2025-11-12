@@ -5,7 +5,13 @@ from adafruit_ads1x15.ads1015 import ADS1015
 from adafruit_ads1x15.analog_in import AnalogIn
 from Adafruit_IO import Client
 import adafruit_as726x
+import os
 
+ADAFRUIT_IO_USERNAME1 = os.environ.get("ADAFRUIT_IO_USERNAME_Orange_Apple_Bellpepper")
+ADAFRUIT_IO_KEY1 = os.environ.get("ADAFRUIT_IO_KEY_Orange_Apple_Bellpepper")
+
+ADAFRUIT_IO_USERNAME2 = os.environ.get("ADAFRUIT_IO_USERNAME_Potato_Bellpepper_Tomato")
+ADAFRUIT_IO_KEY2 = os.environ.get("ADAFRUIT_IO_KEY_Potato_Bellpepper_Tomato")
 
 
 # === Initialize Adafruit IO Client ===
@@ -33,7 +39,7 @@ nir_interval = 200  # 5 minutes in seconds
 while True:
     try:
         # === GAS SENSOR SECTION (every 1 minute) ===
-        mq4_voltage = mq4_chan.voltage #-0.010
+        mq4_voltage = mq4_chan.voltage-0.010
         print(f"[{sample_id}] MQ4 Voltage: {mq4_voltage:.3f} V")
         aio1.send('mq4-gas-bellpepper', f"{sample_id}:{mq4_voltage}")
         time.sleep(0.5)
@@ -64,7 +70,7 @@ while True:
             yellow = as7263.yellow
             green = as7263.green
             blue = as7263.blue
-            violet = as7263.violet+25.35116577148437
+            violet = as7263.violet+29.35116577148437
             as7263.driver_led = False
 
             nir_data = f"{sample_id}:{red},{orange},{yellow},{green},{blue},{violet}"

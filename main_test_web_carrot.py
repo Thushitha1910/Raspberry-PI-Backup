@@ -331,6 +331,8 @@ from adafruit_ads1x15.ads1015 import ADS1015
 from adafruit_ads1x15.analog_in import AnalogIn
 from ultralytics import YOLO
 import board, busio
+import RPi.GPIO as GPIO
+
 
 # === Load YOLO Model ===
 model = YOLO("/home/device/ML_model/best_my_model2.pt")
@@ -338,6 +340,12 @@ model = YOLO("/home/device/ML_model/best_my_model2.pt")
 # === Setup I2C for ADS1015 & AS7263 ===
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS1015(i2c)
+
+# === NEW: Setup GPIO for Flasher Light ===
+FLASHER_PIN = 16  # This is GPIO16 (BCM naming)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(FLASHER_PIN, GPIO.OUT)
+GPIO.output(FLASHER_PIN, GPIO.LOW) # Ensure it's off to start
 
 # === Create analog input channels ===
 mq4_chan = AnalogIn(ads, 0)
@@ -429,9 +437,11 @@ def capture_image(filename="captured_image.jpg"):
     try:
         as7263 = adafruit_as726x.AS726x_I2C(i2c)
         as7263.driver_led = True
+        GPIO.output(FLASHER_PIN, GPIO.HIGH)
         time.sleep(0.5)
         subprocess.run(["fswebcam","-d","/dev/video0","-r","1280x720","--no-banner", filename], check=True)
         as7263.driver_led = False
+        GPIO.output(FLASHER_PIN, GPIO.LOW)
         return Image.open(filename)
     except subprocess.CalledProcessError as e:
         as7263.driver_led = False
@@ -448,7 +458,7 @@ def read_sensors(sample_id="carrot1"):
         ppm_mq4 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
 
         # MQ135
-        mq135_v = mq135_chan.voltage-0.078
+        mq135_v = mq135_chan.voltage-0.058
         rs = (5 - mq135_v) * 1000 / mq135_v
         ratio = rs / 10000
         ppm_mq135 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
@@ -465,7 +475,7 @@ def read_sensors(sample_id="carrot1"):
         time.sleep(0.5)
         while not as7263.data_ready:
             time.sleep(0.05)
-        violet = as7263.violet+15.35116577148437
+        violet = as7263.violet+30.35116577148437
         as7263.driver_led = False
 
         return [ppm_mq4, ppm_mq135, ppm_tgs2602, violet]
