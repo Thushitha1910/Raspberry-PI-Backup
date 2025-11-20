@@ -66,7 +66,7 @@ while True:
             yellow = as7263.yellow
             green = as7263.green
             blue = as7263.blue
-            violet = as7263.violet+30.35116577148437
+            violet = as7263.violet+33.35116577148437
             as7263.driver_led = False
 
             nir_data = f"{sample_id}:{red},{orange},{yellow},{green},{blue},{violet}"

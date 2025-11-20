@@ -406,9 +406,23 @@ def run_analysis_with_button_reset():
 # --- Tkinter Setup ---
 root = tk.Tk()
 root.title("GreenMate – Freshness Ripeness Simplified")
-root.geometry("800x480")
+# root.geometry("800x480")
 root.configure(bg="#D3F0D8")
 root.resizable(False, False)
+
+# ADDED: Fullscreen and borderless attributes
+root.attributes('-fullscreen', True) 
+root.overrideredirect(True)
+
+# # ADDED: Exit Function and Escape Key Binding
+def exit_app(event=None):
+    """Function to destroy the main window and clean up GPIO."""
+    print("\n🛑 Escape key pressed. Exiting...")
+    root.destroy()
+    GPIO.cleanup() # Ensure GPIO cleanup happens
+
+root.bind('<Escape>', exit_app)
+# # --- END MODIFICATIONS ---
 
 # --- Load Logo ---
 logo_path = "/home/device/ML_model/logo.png"
@@ -596,6 +610,6 @@ print("\n🔹 System ready. Launching GreenMate UI...\n")
 root.after(300, check_button)
 root.mainloop()
 
-# Clean up GPIO on exit
+ # Clean up GPIO on exit
 print("🛑 Exiting... cleaning up GPIO.")
 GPIO.cleanup()

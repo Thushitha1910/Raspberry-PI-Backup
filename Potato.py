@@ -23,7 +23,7 @@ mq135_chan = AnalogIn(ads, 1)     # A1 for MQ135
 tgs2602_chan = AnalogIn(ads, 2)   # A2 for TGS2602
 
 # === Sample ID ===
-sample_id = "potato1"  # <-- Change this for each banana (banana1, banana2, etc.)
+sample_id = "potato2\"  # <-- Change this for each banana (banana1, banana2, etc.)
 
 print("Starting sensor loop for", sample_id)
 
@@ -65,7 +65,7 @@ while True:
             yellow = as7263.yellow
             green = as7263.green
             blue = as7263.blue
-            violet = as7263.violet+30.35116577148437
+            violet = as7263.violet+33.35116577148437
             as7263.driver_led = False
 
             nir_data = f"{sample_id}:{red},{orange},{yellow},{green},{blue},{violet}"
