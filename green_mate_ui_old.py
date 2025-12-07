@@ -31,11 +31,8 @@ import sensor_config # <--- Make sure this is imported
 import calibrate_now
 
 import board, busio
-try:
-    i2c = busio.I2C(board.SCL, board.SDA)
-    ads = ADS1015(i2c)
-except Exception:
-    print("Hardware warning: I2C or ADS1015 not found.")
+i2c = busio.I2C(board.SCL, board.SDA)
+ads = ADS1015(i2c)
 
 # === NEW: Setup GPIO for Flasher Light ===
 FLASHER_PIN = 16  # This is GPIO16 (BCM naming)
@@ -70,29 +67,58 @@ try:
     from main_test_web_apple import run_analysis as run_apple_analysis
     from main_test_web_tomato import run_analysis as run_tomato_analysis
     from main_test_web_bellpepper import run_analysis as run_bellpepper_analysis
-    from main_test_web_potato import run_analysis as run_potato_analysis
+    # ... import other analysis scripts here ...
 except ImportError as e:
     print(f"❌ Critical Error: Could not import analysis modules.")
-    print(f"Make sure vit_identifier.py, etc., are in the same folder.")
+    print(f"Make sure vit_identifier.py, main_test_web_banana.py, etc., are in the same folder.")
     print(f"Error: {e}")
-    # exit() # Commented out to allow UI testing without modules
+    exit()
+
 
 # === Global Hardware Setup ===
+# (No need to set this up in the other scripts anymore)
+try:
+    i2c = busio.I2C(board.SCL, board.SDA)
+except RuntimeError:
+    print("⚠️ Could not initialize I2C. Hardware may not be connected.")
+    # You might want to exit() or have a 'demo mode'
+    
 BUTTON_PIN = 17
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 
 # === Produce Information Database ===
+# Central place to store UI text for each item
 PRODUCE_INFO = {
-    "banana": { "name": "Banana", "type": "fruit" },
-    "carrot": { "name": "Carrot", "type": "vegetable" },
-    "mango": { "name": "Mango", "type": "fruit" },
-    "strawberry": { "name": "Strawberry", "type": "fruit" },
-    "apple": { "name": "Apple", "type": "fruit" },
-    "tomato": { "name": "Tomato", "type": "vegetable" },
-    "bellpepper": { "name": "Bellpepper", "type": "vegetable" },
-    "potato": { "name": "Potato", "type": "vegetable" },
+    "banana": {
+        "name": "Banana",
+        "type": "fruit"
+    },
+    "carrot": {
+        "name": "Carrot",
+        "type": "vegetable"
+    },
+    "mango": {
+        "name": "Mango",
+        "type": "fruit"
+    },
+    "strawberry": {
+        "name": "Strawberry",
+        "type": "fruit"
+    },
+    "apple": {
+        "name": "Apple",
+        "type": "fruit"
+    },
+    "tomato": {
+        "name": "Tomato",
+        "type": "vegetable"  # Botanically a fruit, and "ripeness" applies
+    },
+    "bellpepper": {
+        "name": "Bellpepper",
+        "type": "vegetable"  # Botanically a fruit, and "ripeness" applies
+    },
 }
 
 # ==============================
@@ -100,124 +126,79 @@ PRODUCE_INFO = {
 # ==============================
 
 def capture_vit_image(filename="captured_item.jpg"):
-    """Captures an image using fswebcam."""
+    """
+    Captures an image using fswebcam for the ViT identifier.
+    This is the simple capture from main_fruit_detector.py.
+    """
     try:
         as7263 = adafruit_as726x.AS726x_I2C(i2c)
         as7263.driver_led = True
         GPIO.output(FLASHER_PIN, GPIO.HIGH)
         time.sleep(0.5)
         subprocess.run([
-            "fswebcam", "-d", "/dev/video0", "-r", "1280x720", "--no-banner", filename
+            "fswebcam",
+            "-d", "/dev/video0",
+            "-r", "1280x720",
+            "--no-banner",
+            filename
         ], check=True)
         as7263.driver_led = False
         GPIO.output(FLASHER_PIN, GPIO.LOW)
         print(f"✅ ViT Image captured successfully: {filename}")
         return filename
-    except Exception as e:
+    except subprocess.CalledProcessError as e:
         print(f"❌ Error capturing ViT image: {e}")
         return None
 
-def get_gemini_nutrients(item_name, ripeness_level):
-    """Gets a dynamic nutrient list from the Gemini API."""
+def get_gemini_nutrients(item_name,ripeness_level):
+    """
+    Gets a dynamic nutrient list from the Gemini API.
+    """
     if not GEMINI_API_KEY:
+        # Fallback if API key is not set
         return "Nutrient data not available."
+
     prompt = (
         f"List the main nutrients (e.g., vitamins, minerals) for a '{ripeness_level}' '{item_name}'. "
-        f"Be concise, like a comma-separated list. Example: Vitamin C, Potassium, Fiber"
+        f"Be concise, like a comma-separated list. "
+        f"Example: Vitamin C, Potassium, Fiber"
     )
+    
     try:
-        response = gemini_model.generate_content(prompt, request_options={'timeout': 30})
+        # Set a 10-second timeout for the network request
+        response = gemini_model.generate_content(
+            prompt,
+            request_options={'timeout': 30}
+        )
         return response.text.strip()
     except Exception as e:
         print(f"❌ Gemini API Error: {e}")
         return "Nutrient data not available."
 
-def fetch_and_update_nutrients(item_name, ripeness_level):
-    """Runs the Gemini query in a thread and updates the UI."""
-    nutrients = get_gemini_nutrients(item_name, ripeness_level)
+
+def fetch_and_update_nutrients(item_name,ripeness_level):
+    """
+    Runs the Gemini query in a thread and updates the UI when complete.
+    """
+    # Get the dynamic nutrients
+    nutrients = get_gemini_nutrients(item_name,ripeness_level)
+    
+    # Update the UI label (must be thread-safe)
     try:
+        # This is safe because Tkinter updates are atomic
         nutrient_text.config(text=nutrients)
     except tk.TclError:
-        pass 
-
-# ========================================================
-# === GRAPH UPDATE FUNCTION (HORIZONTAL) ===
-# ========================================================
-def update_sensor_graph_ui(sensor_vals_list):
-    """
-    Updates the horizontal bar graph width and values.
-    Expects a list: [MQ4_val, MQ135_val, TGS_val, NIR_val]
-    """
-    # Define max values to calculate percentage width
-    max_values = [60, 60, 60, 150] 
-    sensor_names = ["MQ4", "MQ135", "TGS", "NIR"]
-    
-    # Define colors
-    bar_colors = ["#17a2b8", "#28a745", "#ffc107", "#6f42c1"]
-    
-    # Configuration for Horizontal Graph (Must match Setup below)
-    start_x = 105        # Where the bars start (to leave room for text on left)
-    max_bar_width = 210  # Maximum length of a bar in pixels
-    
-    for i, val in enumerate(sensor_vals_list):
-        # 1. Calculate ratio
-        ratio = min(val / max_values[i], 1.0) # Cap at 100%
+        pass # Window was closed before the thread finished
         
-        # 2. Calculate pixel width
-        px_width = ratio * max_bar_width
-        
-        # 3. Get tag names
-        tag_name = sensor_names[i]
-        val_tag_name = tag_name + "_val"
-
-        try:
-            # coords: x0, y0, x1, y1
-            current_coords = sensor_canvas.coords(tag_name)
-            if current_coords:
-                # Keep y0 and y1 the same (vertical position)
-                # Update x1 based on new width
-                y0, y1 = current_coords[1], current_coords[3]
-                new_x1 = start_x + px_width
-                
-                # Ensure visible minimum width
-                if px_width < 2: new_x1 = start_x + 2
-                
-                # Update Bar Geometry
-                sensor_canvas.coords(tag_name, start_x, y0, new_x1, y1)
-                
-                # Color Logic
-                if ratio > 0.8:
-                    sensor_canvas.itemconfig(tag_name, fill="#dc3545") # Red warning
-                else:
-                    sensor_canvas.itemconfig(tag_name, fill=bar_colors[i]) # Normal Color
-                
-                # === UPDATE TEXT VALUE POSITION ===
-                # Place text 10 pixels to the right of the bar end
-                text_x = new_x1 + 10 
-                # Vertical center of the bar
-                mid_y = (y0 + y1) / 2
-                
-                sensor_canvas.coords(val_tag_name, text_x, mid_y)
-                
-                # === FORMAT TEXT (2 decimals + PPM logic) ===
-                if i < 3: # MQ4, MQ135, TGS
-                    display_text = f"{val:.2f} PPM"
-                else:     # NIR / Spectral
-                    display_text = f"{val:.2f}"
-                
-                sensor_canvas.itemconfig(val_tag_name, text=display_text)
-
-        except Exception as e:
-            print(f"Graph update error: {e}")
-
 def update_ui(result):
     """
     Updates all UI elements based on the final result dictionary.
+    (CORRECTED VERSION)
     """
     # === Initialize variables to safe defaults ===
     item_name = "Unknown"
     pred_name = "Unknown"
-    info = PRODUCE_INFO.get("banana") 
+    info = PRODUCE_INFO.get("banana") # Default to banana info
 
     try:
         if not result:
@@ -232,7 +213,8 @@ def update_ui(result):
         days_to_rotten = result.get("days_to_rotten")
         rotten_date_str = result.get("estimated_rotten_date")
 
-        # === 2. Get the produce info ===
+        # === 2. Get the produce info (THIS IS THE FIX) ===
+        #    Assign 'info' *after* 'item_name' is known, and *before* 'info' is used.
         info = PRODUCE_INFO.get(item_name, PRODUCE_INFO.get("banana")) 
         
         # === 3. Update Image ===
@@ -242,9 +224,11 @@ def update_ui(result):
             target_w, target_h = 268, 135
             aspect = img_w / img_h
             if aspect > (target_w / target_h):
-                new_w = target_w; new_h = int(new_w / aspect)
+                new_w = target_w
+                new_h = int(new_w / aspect)
             else:
-                new_h = target_h; new_w = int(new_h * aspect)
+                new_h = target_h
+                new_w = int(new_h * aspect)
             
             img = img.resize((new_w, new_h), Image.LANCZOS)
             new_photo = ImageTk.PhotoImage(img)
@@ -253,26 +237,36 @@ def update_ui(result):
             image_label.image = new_photo
             image_canvas.delete("image_window")
             image_canvas.create_window(135, 68, window=image_label, anchor="center", tags="image_window")
+        else:
+            print(f"⚠️ Could not load image from path: {img_path}")
         
-        # === 4. Update Text Labels ===
+        # === 4. Update all text labels ===
         produce_name_label.config(text=info["name"])
         
-        # === 5. Update SENSORS ===
-        update_sensor_graph_ui(sensor_values)
+        sensor_labels["MQ 4 Sensor"].config(text=f"{sensor_values[0]:.2f} ppm")
+        sensor_labels["MQ 135 Sensor"].config(text=f"{sensor_values[1]:.2f} ppm")
+        sensor_labels["TGS2602 Sensor"].config(text=f"{sensor_values[2]:.2f} ppm")
+        sensor_labels["NIR Spectrometer"].config(text=f"{sensor_values[3]:.2f}")
         
-        # === Dynamically set label based on produce type ===
-        produce_type = info.get("type", "fruit")
+        # === NEW: Dynamically set label based on produce type ===
+        produce_type = info.get("type", "fruit") # Default to 'fruit' if not specified
+        
         if produce_type == "vegetable":
             label_text = "Freshness Level:"
             ripeness_label.place(x=10, y=335)
-            ripeness_label.config(text=f"{label_text} {pred_name}", font=("Poppins", 13, "bold"))
+            ripeness_label.config(
+                text=f"{label_text} {pred_name}", 
+                font=("Poppins", 13, "bold")  # <-- SET NEW FONT
+            )
         else:
             label_text = "Ripeness Level:"
-            ripeness_label.config(text=f"{label_text} {pred_name}")
+            
+        ripeness_label.config(text=f"{label_text} {pred_name}")
+        # === END NEW ===
         
-        draw_gauge(gauge_canvas, pred_name)
+        draw_gauge(gauge_canvas, pred_name) # Update the gauge
 
-        # === 6. Update Shelf Life ===
+        # === 5. Update Shelf Life ===
         if pred_name in ("Rotten", "Overripe"):
             shelf_life_text.config(text="Item is past its prime.")
         elif days_to_rotten is not None and rotten_date_str is not None:
@@ -280,21 +274,29 @@ def update_ui(result):
         else:
             shelf_life_text.config(text="...")
 
-        # === 7. Update Nutrients ===
+        # === 6. Update Nutrients (dynamically) ===
         nutrient_text.config(text="Getting nutrients...")
-        threading.Thread(target=fetch_and_update_nutrients, args=(info["name"],pred_name), daemon=True).start()
+        threading.Thread(
+            target=fetch_and_update_nutrients, 
+            args=(info["name"],pred_name), # Now 'info' is guaranteed to exist
+            daemon=True
+        ).start()
 
     except Exception as e:
+        # If ANY error happens, print it and show a user-friendly message
         print(f"❌ Error in update_ui: {e}")
         try:
             ripeness_label.config(text="Ripeness Level: Error")
+            produce_name_label.config(text="Error")
+            nutrient_text.config(text="...")
+            shelf_life_text.config(text="...")
         except Exception:
-            pass 
+            pass # UI might already be closed
 
 
 def run_full_analysis_pipeline():
     """
-    Main function that orchestrates the entire process.
+    This is the main function that orchestrates the entire process.
     """
     # --- 1. Clear UI for new scan ---
     ripeness_label.config(text="        Identifying..")
@@ -302,11 +304,12 @@ def run_full_analysis_pipeline():
     ripeness_label.config(font=("Poppins", 14, "bold"))
     produce_name_label.config(text="...")
     nutrient_text.config(text="...")
-    shelf_life_text.config(text="...") 
-    
-    # === Reset Graph ===
-    update_sensor_graph_ui([0, 0, 0, 0]) 
-    
+    #suggestion_text.config(text="...")
+    shelf_life_text.config(text="...") # === NEW ===
+    sensor_labels["MQ 4 Sensor"].config(text="... ppm")
+    sensor_labels["MQ 135 Sensor"].config(text="... ppm")
+    sensor_labels["TGS2602 Sensor"].config(text="... ppm")
+    sensor_labels["NIR Spectrometer"].config(text="...")
     draw_gauge(gauge_canvas, "...")
     default_photo = ImageTk.PhotoImage(Image.new("RGB", (1, 1), color="#ffffff"))
     image_label.configure(image=default_photo, bg="white")
@@ -343,15 +346,20 @@ def run_full_analysis_pipeline():
     # --- 5. Run specific analysis script ---
     analysis_result = None
     try:
-        # Map item names to functions
-        if item_name == "banana": analysis_result = run_banana_analysis()
-        elif item_name == "carrot": analysis_result = run_carrot_analysis()
-        elif item_name == "mango": analysis_result = run_mango_analysis()
-        elif item_name == "strawberry": analysis_result = run_strawberry_analysis()
-        elif item_name == "apple": analysis_result = run_apple_analysis()
-        elif item_name == "tomato": analysis_result = run_tomato_analysis()
-        elif item_name == "bellpepper": analysis_result = run_bellpepper_analysis()
-        elif item_name == "potato": analysis_result = run_potato_analysis()
+        if item_name == "banana":
+            analysis_result = run_banana_analysis()
+        elif item_name == "carrot":
+            analysis_result = run_carrot_analysis()
+        elif item_name == "mango":
+            analysis_result = run_mango_analysis()
+        elif item_name == "strawberry":
+            analysis_result = run_strawberry_analysis()
+        elif item_name == "apple":
+            analysis_result = run_apple_analysis()
+        elif item_name == "tomato":
+            analysis_result = run_tomato_analysis()
+        elif item_name == "bellpepper":
+            analysis_result = run_bellpepper_analysis()
         else:
             print(f"⚠️ No analysis script found for: {item_name}")
             ripeness_label.config(text=f"No model for {item_name}")
@@ -378,18 +386,19 @@ def run_analysis_thread():
 def run_analysis_with_button_reset():
     """Wraps analysis to re-enable button after completion."""
     try:
-        run_full_analysis_pipeline() 
+        run_full_analysis_pipeline() # <-- This is the new main function
     except Exception as e:
         print(f"Error in analysis thread: {e}")
         try:
             ripeness_label.config(text="Ripeness Level: Error")
         except tk.TclError:
-            pass 
+            pass # UI already closed
     finally:
+        # Re-enable button
         try:
             scan_button.config(state="normal", text="Scan Produce")
         except tk.TclError:
-            pass 
+            pass # UI already closed
 
 def run_auto_calibration():
     """Runs calibration and reloads settings."""
@@ -418,6 +427,7 @@ def run_auto_calibration():
 # ==============================
 # === GreenMate Tkinter UI ====
 # ==============================
+# (This is all the same UI code from your original script)
 
 # --- Tkinter Setup ---
 root = tk.Tk()
@@ -425,16 +435,21 @@ root.title("GreenMate – Freshness Ripeness Simplified")
 root.geometry("800x520")
 root.configure(bg="#D3F0D8")
 root.resizable(False, False)
-root.focus_force()
+
+root.focus_force()  # Add this line
+# ADDED: Fullscreen and borderless attributes
 root.attributes('-fullscreen', True) 
 root.overrideredirect(True)
 
+# # ADDED: Exit Function and Escape Key Binding
 def exit_app(event=None):
+    """Function to destroy the main window and clean up GPIO."""
     print("\n🛑 Escape key pressed. Exiting...")
     root.destroy()
-    GPIO.cleanup() 
+    GPIO.cleanup() # Ensure GPIO cleanup happens
 
 root.bind('<Escape>', exit_app)
+# # --- END MODIFICATIONS ---
 
 # --- Load Logo ---
 logo_path = "/home/device/ML_model/logo.png"
@@ -442,6 +457,7 @@ try:
     logo_img = Image.open(logo_path).resize((120, 60))
     logo_photo = ImageTk.PhotoImage(logo_img)
 except Exception as e:
+    print(f"Logo load error: {e}")
     logo_photo = None
 
 # --- Layout Frames ---
@@ -455,13 +471,14 @@ header_frame = tk.Frame(top_frame, bg="#D3F0D8")
 header_frame.pack(side="top", pady=5)
 if logo_photo:
     tk.Label(header_frame, image=logo_photo, bg="#D3F0D8").pack(pady=(0,2))
-tk.Label(header_frame, text="Eat Fresh. Live Healthy.", bg="#D3F0D8", font=("Poppins", 10, "italic")).pack()
+tk.Label(header_frame, text="Freshness Ripeness Simplified", bg="#D3F0D8", font=("Poppins", 9, "normal")).pack()
 
 # ==================================
 # === LEFT SIDE (Image & Gauge) ====
 # ==================================
 
 def create_rounded_rect(canvas, x, y, w, h, r, **kwargs):
+    # === FIXED: Typo 9NT changed to 90 ===
     canvas.create_arc(x, y, x+2*r, y+2*r, start=90, extent=90, style=tk.PIESLICE, **kwargs)
     canvas.create_arc(x+w-2*r, y, x+w, y+2*r, start=0, extent=90, style=tk.PIESLICE, **kwargs)
     canvas.create_arc(x, y+h-2*r, x+2*r, y+h, start=180, extent=90, style=tk.PIESLICE, **kwargs)
@@ -486,19 +503,28 @@ gauge_canvas = tk.Canvas(content_frame, width=200, height=120, bg="#D3F0D8", hig
 gauge_canvas.place(x=85, y=210)
 
 def draw_gauge(canvas, ripeness_name):
-    """Draws the ripeness gauge."""
+    """Draws the ripeness gauge. Now handles multiple item labels."""
     canvas.delete("all")
     cx, cy, r = 100, 100, 80
     
-    # Background arcs
-    canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=180, extent=-60, fill="#28a745", outline="#28a745", style=tk.ARC, width=20) 
-    canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=120, extent=-60, fill="#ffc107", outline="#ffc107", style=tk.ARC, width=20) 
-    canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=60, extent=-60, fill="#dc3545", outline="#dc3545", style=tk.ARC, width=20) 
+    # Draw background arcs
+    canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=180, extent=-60, 
+                        fill="#28a745", outline="#28a745", style=tk.ARC, width=20) # Green
+    canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=120, extent=-60, 
+                        fill="#ffc107", outline="#ffc107", style=tk.ARC, width=20) # Yellow
+    canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=60, extent=-60, 
+                        fill="#dc3545", outline="#dc3545", style=tk.ARC, width=20) # Red
 
-    if ripeness_name in ("Ripe", "Fresh"): angle_deg = 70 
-    elif ripeness_name in ("Unripe", "Underripe", "Not_Fresh"): angle_deg = 30 
-    elif ripeness_name in ("Overripe", "Rotten"): angle_deg = 150 
-    else: angle_deg = 90 
+    # === UPDATED MAPPING ===
+    # Map ripeness name to angle
+    if ripeness_name in ("Ripe", "Fresh"):
+        angle_deg = 70 # Pointing at green
+    elif ripeness_name in ("Unripe", "Underripe", "Not_Fresh"):
+        angle_deg = 30 # Pointing at yellow
+    elif ripeness_name in ("Overripe", "Rotten"):
+        angle_deg = 150 # Pointing at red
+    else: # Default/unknown state
+        angle_deg = 90 # Pointing straight up (middle)
         
     angle_rad = math.radians(angle_deg)
     lx = cx - (r * 0.85) * math.cos(angle_rad)
@@ -512,58 +538,19 @@ draw_gauge(gauge_canvas, "—")
 ripeness_label = tk.Label(content_frame, text="  Ripeness Level: —", font=("Poppins", 14, "bold"), bg="#D3F0D8")
 ripeness_label.place(x=75, y=335)
 
-# ====================================================
-# === RIGHT SIDE (Sensors Graph - HORIZONTAL) ===
-# ====================================================
+# =====================================
+# === RIGHT SIDE (Sensors & Panel) ===
+# =====================================
+
 sensor_frame = tk.Frame(content_frame, bg="#D3F0D8")
-sensor_frame.place(x=380, y=0)
-tk.Label(sensor_frame, text="Quality Metrics:", font=("Poppins", 12, "bold"), bg="#D3F0D8").pack(anchor="w", pady=(0, 5))
-
-# --- GRAPH SETUP ---
-graph_width = 415
-graph_height = 160 
-bar_height = 20
-spacing = 30       # Vertical space between bars
-start_y = 10      # Top margin
-start_x = 105      # Left margin (space for labels "Methane", etc.)
-
-sensor_canvas = tk.Canvas(sensor_frame, width=graph_width, height=graph_height, bg="#D3F0D8", highlightthickness=0)
-sensor_canvas.pack()
-
-# Draw Vertical Axis Line
-sensor_canvas.create_line(start_x, 10, start_x, graph_height-10, fill="#7f8c8d", width=2)
-
-# --- CONFIGURATION ---
-internal_tags = ["MQ4", "MQ135", "TGS", "NIR"]
-display_labels = ["Methane", "Ammonia/CO2", "VOCs", "Spectral Data"]
-bar_colors = ["#17a2b8", "#28a745", "#ffc107", "#6f42c1"]
-
-for i in range(4):
-    y0 = start_y + (i * spacing)
-    y1 = y0 + bar_height
-    
-    # Initial Width (0)
-    x0 = start_x
-    x1 = start_x + 1 # Start with tiny bar
-    
-    tag_name = internal_tags[i]
-    label_text = display_labels[i]
-    
-    # 1. Draw Text Label on LEFT
-    sensor_canvas.create_text(start_x - 10, (y0 + y1)/2, text=label_text, 
-                              font=("Poppins", 9, "bold"), fill="#333333", anchor="e")
-    
-    # 2. Draw Bar
-    sensor_canvas.create_rectangle(x0, y0, x1, y1, fill=bar_colors[i], outline="", tags=tag_name)
-    
-    # 3. Create Value Text Object (Initially '0.00' on right side)
-    val_tag_name = tag_name + "_val"
-    sensor_canvas.create_text(x1 + 10, (y0 + y1)/2, text="0.00", 
-                              font=("Poppins", 8, "bold"), fill="#333333", anchor="w", tags=val_tag_name)
-
-# =====================================
-# === RIGHT SIDE (Panel & Button) ===
-# =====================================
+sensor_frame.place(x=380, y=20)
+tk.Label(sensor_frame, text="Sensors in active:", font=("Poppins", 12, "bold"), bg="#D3F0D8").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
+sensor_labels = {}
+for i, name in enumerate(["MQ 4 Sensor", "MQ 135 Sensor", "TGS2602 Sensor", "NIR Spectrometer"], start=1):
+    tk.Label(sensor_frame, text=f"{name}:", font=("Poppins", 12, "normal"), bg="#D3F0D8").grid(row=i, column=0, sticky="w", padx=(0, 20))
+    lbl = tk.Label(sensor_frame, text="—", font=("Poppins", 12, "bold"), bg="#D3F0D8", width=10, anchor="e")
+    lbl.grid(row=i, column=1, padx=10, sticky="e")
+    sensor_labels[name] = lbl
 
 def create_rounded_panel(canvas, x, y, w, h, r):
     border_color = "#bbbbbb"
@@ -580,7 +567,8 @@ def create_rounded_panel(canvas, x, y, w, h, r):
     canvas.create_line(x, y+h-1, x+w-1, y+h-1, fill=border_color, width=1)
 
 panel_width = 400
-panel_height = 210 
+# === FIXED: Increased panel height to fit button ===
+panel_height = 210 # Was 230
 right_panel_canvas = tk.Canvas(content_frame, bg="#D3F0D8", bd=0, highlightthickness=0)
 right_panel_canvas.place(x=380, y=155, width=panel_width, height=panel_height)
 create_rounded_panel(right_panel_canvas, 0, 0, panel_width, panel_height, 20)
@@ -593,10 +581,18 @@ nutrient_label.pack(side="top", anchor="w", padx=20, pady=(15,0))
 nutrient_text = tk.Label(inner_panel, text="", font=("Poppins", 11, "normal"), bg="#ffffff", justify="left", wraplength=360, anchor="w")
 nutrient_text.pack(side="top", anchor="w", padx=20, pady=2, fill="x")
 
+# suggestion_label = tk.Label(inner_panel, text="Suggestions:", font=("Poppins", 12, "bold"), bg="#ffffff")
+# suggestion_label.pack(side="top", anchor="w", padx=20, pady=(15,0))
+# suggestion_text = tk.Label(inner_panel, text="", font=("Poppins", 11, "normal"), bg="#ffffff", justify="left", wraplength=360, anchor="w")
+# suggestion_text.pack(side="top", anchor="w", padx=20, pady=2, fill="x")
+
+# === NEW: Shelf Life Labels ===
 shelf_life_label = tk.Label(inner_panel, text="Shelf Life:", font=("Poppins", 12, "bold"), bg="#ffffff")
-shelf_life_label.pack(side="top", anchor="w", padx=20, pady=(10,0)) 
+shelf_life_label.pack(side="top", anchor="w", padx=20, pady=(10,0)) # Reduced top padding slightly
 shelf_life_text = tk.Label(inner_panel, text="...", font=("Poppins", 11, "normal"), bg="#ffffff", justify="left", wraplength=360, anchor="w")
 shelf_life_text.pack(side="top", anchor="w", padx=20, pady=2, fill="x")
+# === END NEW ===
+
 
 try:
     icon_path = "/home/device/ML_model/scan_icon.png"
@@ -606,6 +602,7 @@ try:
     btn_image = scan_icon_photo
     btn_padx = 10
 except Exception as e:
+    print(f"Scan icon load error: {e}. Using text-only button.")
     scan_icon_photo = None
     btn_compound = "none"
     btn_image = None
@@ -617,13 +614,14 @@ scan_button = tk.Button(button_frame, text="Scan Produce", font=("Poppins", 13, 
                         bg="#2b8a3e", fg="white", relief="raised", 
                         image=btn_image, compound=btn_compound,
                         padx=btn_padx,
-                        command=run_analysis_thread)
+                        command=run_analysis_thread) # This now calls the new pipeline
 scan_button.pack(pady=0)
 if scan_icon_photo:
     scan_button.image = scan_icon_photo
 
+
 # ==============================
-# === GPIO Check Loop =====
+# === GPIO Check Loop (FIXED) ==
 # ==============================
 
 def check_button():
@@ -664,6 +662,6 @@ print("\n🔹 System ready. Launching GreenMate UI...\n")
 root.after(300, check_button)
 root.mainloop()
 
-# Clean up GPIO on exit
+ # Clean up GPIO on exit
 print("🛑 Exiting... cleaning up GPIO.")
 GPIO.cleanup()

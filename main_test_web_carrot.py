@@ -332,6 +332,7 @@ from adafruit_ads1x15.analog_in import AnalogIn
 from ultralytics import YOLO
 import board, busio
 import RPi.GPIO as GPIO
+import sensor_config
 
 
 # === Load YOLO Model ===
@@ -452,30 +453,34 @@ def capture_image(filename="captured_image.jpg"):
 def read_sensors(sample_id="carrot1"):
     try:
         # MQ4
-        mq4_v = mq4_chan.voltage-0.010
+        mq4_offset = sensor_config.OFFSETS["MQ4"]
+        mq4_v = mq4_chan.voltage-mq4_offset
         rs = (5 - mq4_v) * 1000 / mq4_v
         ratio = rs / 10000
         ppm_mq4 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
 
         # MQ135
-        mq135_v = mq135_chan.voltage-0.058
+        mq135_offset = sensor_config.OFFSETS["MQ135"]
+        mq135_v = mq135_chan.voltage-mq135_offset
         rs = (5 - mq135_v) * 1000 / mq135_v
         ratio = rs / 10000
         ppm_mq135 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
 
         # TGS2602
-        tgs2602_v = tgs2602_chan.voltage
+        tgs_offset = sensor_config.OFFSETS["TGS2602"]
+        tgs2602_v = tgs2602_chan.voltage-tgs_offset
         rs = (5 - tgs2602_v) * 1000 / tgs2602_v
         ratio = rs / 10000
         ppm_tgs2602 = 10 ** (-0.38 * math.log10(ratio) + 1.58)
 
         # AS7263 (NIR)
+        nir_offset = sensor_config.OFFSETS["NIR"]
         as7263 = adafruit_as726x.AS726x_I2C(i2c)
         as7263.driver_led = True
         time.sleep(0.5)
         while not as7263.data_ready:
             time.sleep(0.05)
-        violet = as7263.violet+30.35116577148437
+        violet = as7263.violet+24.35116577148437+nir_offset
         as7263.driver_led = False
 
         return [ppm_mq4, ppm_mq135, ppm_tgs2602, violet]

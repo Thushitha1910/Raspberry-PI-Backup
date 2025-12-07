@@ -70,7 +70,6 @@ try:
     from main_test_web_apple import run_analysis as run_apple_analysis
     from main_test_web_tomato import run_analysis as run_tomato_analysis
     from main_test_web_bellpepper import run_analysis as run_bellpepper_analysis
-    from main_test_web_potato import run_analysis as run_potato_analysis
 except ImportError as e:
     print(f"❌ Critical Error: Could not import analysis modules.")
     print(f"Make sure vit_identifier.py, etc., are in the same folder.")
@@ -92,7 +91,6 @@ PRODUCE_INFO = {
     "apple": { "name": "Apple", "type": "fruit" },
     "tomato": { "name": "Tomato", "type": "vegetable" },
     "bellpepper": { "name": "Bellpepper", "type": "vegetable" },
-    "potato": { "name": "Potato", "type": "vegetable" },
 }
 
 # ==============================
@@ -351,7 +349,6 @@ def run_full_analysis_pipeline():
         elif item_name == "apple": analysis_result = run_apple_analysis()
         elif item_name == "tomato": analysis_result = run_tomato_analysis()
         elif item_name == "bellpepper": analysis_result = run_bellpepper_analysis()
-        elif item_name == "potato": analysis_result = run_potato_analysis()
         else:
             print(f"⚠️ No analysis script found for: {item_name}")
             ripeness_label.config(text=f"No model for {item_name}")
