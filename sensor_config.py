@@ -7,7 +7,7 @@
 
 OFFSETS = {
     "MQ4": 0.0220,      # Target: 0.128
-    "MQ135": 0.0666,    # Target: 0.156
+    "MQ135": 0.075,    # Target: 0.156
     "TGS2602": 0.0076,   # Target: 0.032
     "NIR": 0
 }

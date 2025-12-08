@@ -45,7 +45,6 @@ GPIO.output(FLASHER_PIN, GPIO.LOW)
 
 # === Configure Gemini API ===
 try:
-   
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
     if not GEMINI_API_KEY:
@@ -103,7 +102,7 @@ SENSOR_RANGES = {
         (20, 24),  # Methane 
         (22, 36),  # Ammonia 
         (13, 17),  # VOCs    
-        (50, 34)   # Spectral
+        (80, 34)   # Spectral
     ],
     "carrot": [
         (22, 26),  # Methane 
